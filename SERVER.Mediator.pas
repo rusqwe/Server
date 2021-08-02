@@ -3,24 +3,30 @@ unit SERVER.Mediator;
 interface
 
 uses
- SERVER.Command, System.Classes, System.SysUtils, FireDAC.Comp.Client;
+  SERVER.Command, System.Classes, System.SysUtils, FireDAC.Comp.Client, SERVER.Source, IdCustomHTTPServer;
 
 type
+  { TKRON4ShowFormProc   = procedure(ACommand: TKRON4Command) of object;
+    TKRON4ShowReportProc = procedure(AReportName: string; AValues: TKRONValues) of object;
+    TKRON4CommandEnabledProc = procedure(ACommand: TKRON4CustomCommand; var AEnabled: boolean) of object; }
 
   TMediator = class
   private
-    FMediator: TMediator;
-    FCommandList: TStringList;
+    FCommandClassList: TStringList;
+    function GetCmdClass(ACommandClass: string): TSERVERCustomCommandClass;
   public
     constructor Create;
     destructor Destroy;
-    procedure Execute(ACommand: string; AQuery:TFDQuery);
-    function CreateCommand(ACommand: string; AQuery: TFDQuery): TSERVERCommand;
-    procedure RegisterCommand(ACommand: TSERVERCommandClass);
-    //function CreateCommand(AAction: string): TCommand;
+    procedure Execute(ARequestInfo: TIdHTTPRequestInfo; var AResponseInfo: TIdHTTPResponseInfo; AQuery: TFDQuery;
+      ASource: TSERVERSource);
+    function CreateCommand(ARequestInfo: TIdHTTPRequestInfo; var AResponseInfo: TIdHTTPResponseInfo; AQuery: TFDQuery;
+      ASource: TSERVERSource): TSERVERCustomCommand;
+    procedure RegisterCommand(ACommand: TSERVERCustomCommandClass);
+
+    // function CreateCommand(AAction: string): TCommand;
   end;
 
-  function Mediator: TMediator;
+function Mediator: TMediator;
 
 implementation
 
@@ -38,27 +44,44 @@ end;
 
 constructor TMediator.Create;
 begin
-  FCommandList := TStringList.Create;
+  FCommandClassList := TStringList.Create;
 end;
 
-function TMediator.CreateCommand(ACommand: string; AQuery: TFDQuery): TSERVERCommand;
+function TMediator.GetCmdClass(ACommandClass: string): TSERVERCustomCommandClass;
+var
+  I: integer;
 begin
+  I := FCommandClassList.IndexOf(ACommandClass);
+  if I <> -1 then
+    Result := TSERVERCustomCommandClass(FCommandClassList.Objects[I])
+  else
+    Result := nil;
+end;
 
+function TMediator.CreateCommand(ARequestInfo: TIdHTTPRequestInfo; var AResponseInfo: TIdHTTPResponseInfo; AQuery: TFDQuery;
+  ASource: TSERVERSource): TSERVERCustomCommand;
+var
+  cmdClass: TSERVERCustomCommandClass;
+begin
+  Result := nil;
+  cmdClass := GetCmdClass(ASource.DB);
+  if cmdClass <> nil then
+    Result := cmdClass.Create(ARequestInfo, AResponseInfo, AQuery, ASource);
 end;
 
 destructor TMediator.Destroy;
 begin
- FreeAndNil(FCommandList);
+  FreeAndNil(FCommandClassList);
 end;
 
-procedure TMediator.Execute(ACommand: string; AQuery:TFDQuery);
+procedure TMediator.Execute(ARequestInfo: TIdHTTPRequestInfo; var AResponseInfo: TIdHTTPResponseInfo; AQuery: TFDQuery;
+  ASource: TSERVERSource);
 var
-  Cmd: TSERVERCommand;
+  Cmd: TSERVERCustomCommand;
 begin
-  Cmd := CreateCommand(ACommand, AQuery);
+  Cmd := CreateCommand(ARequestInfo, AResponseInfo, AQuery, ASource);
   if Cmd = nil then
-  Raise Exception.Create('Command not maked');
-
+    raise Exception.Create('Command not maked');
   try
     Cmd.Execute;
   finally
@@ -66,9 +89,9 @@ begin
   end;
 end;
 
-procedure TMediator.RegisterCommand(ACommand: TSERVERCommandClass);
+procedure TMediator.RegisterCommand(ACommand: TSERVERCustomCommandClass);
 begin
-  FCommandList.AddObject(ACommand.GetName, TObject(ACommand));
+  FCommandClassList.AddObject(ACommand.GetName, TObject(ACommand));
 end;
 
 end.

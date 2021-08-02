@@ -8,7 +8,7 @@ uses
   FireDAC.UI.Intf, FireDAC.Phys.Intf, FireDAC.Stan.Def, FireDAC.Stan.Pool, FireDAC.Stan.Async, FireDAC.Phys,
   FireDAC.Phys.MySQL, FireDAC.Phys.MySQLDef, FireDAC.VCLUI.Wait, Data.DB, FireDAC.Comp.Client, Vcl.Grids,
   FireDAC.Stan.Param, FireDAC.DatS, FireDAC.DApt.Intf, FireDAC.DApt, FireDAC.Comp.DataSet,
-  Vcl.StdCtrls, SERVER.HTTPController;
+  Vcl.StdCtrls, SERVER.HTTPController, SERVER.HTTPServer, SERVER.Source;
 
 
 type
@@ -16,8 +16,13 @@ type
     grdServer: TStringGrid;
     Button1: TButton;
     Button2: TButton;
+    Button3: TButton;
+    Button4: TButton;
     procedure Button1Click(Sender: TObject);
     procedure Button2Click(Sender: TObject);
+    procedure Button3Click(Sender: TObject);
+    procedure FormShow(Sender: TObject);
+    procedure Button4Click(Sender: TObject);
   private
 
   public
@@ -41,12 +46,23 @@ end;
 procedure TMainForm.Button2Click(Sender: TObject);
 begin
   if MainModule.Controller.Refresh then
-    ShowMessage('Удачно!');
+    FillGRD();
+end;
+
+procedure TMainForm.Button3Click(Sender: TObject);
+begin
+  //assert(false);
+  MainModule.test;
+end;
+
+procedure TMainForm.Button4Click(Sender: TObject);
+begin
+   MainModule.test2;
 end;
 
 procedure TMainForm.FillGRD();
 var
-  i:integer;
+  i: integer;
   S: TSERVERSource;
 begin
 
@@ -62,12 +78,17 @@ begin
     begin
       S:= HTTPServers[i].Source;
       grdServer.Cells[0, i] := S.SName;
-      grdServer.Cells[1, i] := MainModule.ArrayToStr(S.DBNames, ',');
+      grdServer.Cells[1, i] := MainModule.ArrayToStr(S.DBNames, ';');
       grdServer.Cells[2, i] := S.DBHost;
       grdServer.Cells[3, i] := S.Port;
       grdServer.Cells[4, i] := S.DB;
     end;
 end;
 
+
+procedure TMainForm.FormShow(Sender: TObject);
+begin
+  FillGRD();
+end;
 
 end.

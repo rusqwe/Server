@@ -18,12 +18,11 @@ __recovery
 *.map
 *.drc
 *.exe
-kron_app_v4/kron4.res
-kron_app_v4/kron4.dproj
+
 
 *.params
 
 *.xls
 
-kron_app_v4/kron4.dpr
+
 
