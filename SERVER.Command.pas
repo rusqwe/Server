@@ -3,11 +3,12 @@ unit SERVER.Command;
 interface
 
 uses
-  System.Classes, System.StrUtils, System.Types, System.SysUtils,  FireDAC.Phys.Intf, System.JSON,
-  FireDAC.Comp.Client, idCustomHTTPServer,   System.Rtti,System.TypInfo, DataSetConverter4D,
-  DataSetConverter4D.Impl, SERVER.Source;
+  System.Classes, System.StrUtils, System.Types, System.SysUtils, FireDAC.Phys.Intf, System.JSON,
+  FireDAC.Comp.Client, idCustomHTTPServer, System.Rtti, System.TypInfo, DataSetConverter4D,
+  DataSetConverter4D.Impl, SERVER.Source, IdGlobal;
 
 type
+
   DefaultAttribute = class(TCustomAttribute)
   private
     FValue: Variant;
@@ -15,7 +16,7 @@ type
     constructor Create(AValue: String); overload;
     constructor Create(AValue: Integer); overload;
     constructor Create(AValue: Boolean); overload;
-    class function GetAttribute(TypeInfo: PTypeInfo; Name:string):Variant;
+    class function GetAttribute(TypeInfo: PTypeInfo; Name: string): Variant;
     property Value: Variant read FValue;
   end;
 
@@ -31,39 +32,38 @@ type
     FCommand: string;
     FQuery: TFDQuery;
     FParams: TStringList;
-    [Default('JSON')]
+    [Default ('JSON')]
     FFormat: String;
-    AProcName:string;
+    AProcName: string;
     FResponseInfo: TIdHTTPResponseInfo;
     FCommandType: THTTPCommandType;
-
+    FPost: TStream;
     procedure InternalExecute(); virtual;
     function GetProcName(): string;
     function GetParams(AName: string): Variant;
 
-    function GetValue(AIndex: integer): Variant;
+    function GetValue(AIndex: Integer): Variant;
     procedure SetParam(AParam: TStrings);
     procedure SetQuery(const Value: TFDQuery);
     procedure SetParams(AName: string; const Value: Variant);
     procedure PrepareName(var AName: string); virtual;
-    procedure PrepareParams(var AParams:string); virtual;
+    procedure PrepareParams(var AParams: string); overload; virtual;
+    procedure PrepareParams(ABody: string; var AParams: string); overload; virtual;
+    procedure PrepareBody(var ABody: string); virtual;
     procedure SetResponseInfo(const Value: TIdHTTPResponseInfo);
     procedure PrepareQuery();
 
-    { FParams: TKRONValues;
-      FOwner: TComponent;                          //Компонент, который владеет информацией об объектах
+    { FOwner: TComponent;                          //Компонент, который владеет информацией об объектах
       FLastCommand: TKRONCommand;                 //Предыдущая команда, которая повлияла на создание этой
       FID: Integer;                               //Уникальный идентификатор команды в сессии
       function GetName(AIndex: integer): string;
       function GetParams(AName: string): Variant;
       function GetValue(AIndex: integer): Variant;
       procedure SetParams(AName: string; const Value: Variant);
-      function GetTextValues(ANames: string): string;
-      function GetCount: integer; }
+    }
   protected
     // function GetBody: string; virtual;
-    // procedure Clear; virtual;
-    // procedure InitParams; virtual;
+
   public
     constructor Create(ARequestInfo: TIdHTTPRequestInfo; var AResponseInfo: TIdHTTPResponseInfo; AQuery: TFDQuery;
       ASource: TSERVERSource); reintroduce;
@@ -74,7 +74,7 @@ type
     property Command: string read FCommand;
     property Query: TFDQuery read FQuery write SetQuery;
     property Params[AName: string]: Variant read GetParams write SetParams; default;
-    property Values[AIndex: integer]: Variant read GetValue;
+    property Values[AIndex: Integer]: Variant read GetValue;
 
     property ResponseInfo: TIdHTTPResponseInfo read FResponseInfo write SetResponseInfo;
     property Format: string read FFormat write FFormat;
@@ -122,10 +122,11 @@ begin
 
   FCommand := ARequestInfo.URI;
   FCommandType := ARequestInfo.CommandType;
+  FPost := ARequestInfo.PostStream;
   SetParam(ARequestInfo.Params);
   Query := AQuery;
 
-  FResponseInfo:= AResponseInfo;
+  FResponseInfo := AResponseInfo;
 
   AProcName := GetProcName;
 
@@ -165,18 +166,20 @@ begin
 
 end;
 
-function TSERVERCustomCommand.GetValue(AIndex: integer): Variant;
+function TSERVERCustomCommand.GetValue(AIndex: Integer): Variant;
 begin
 
 end;
 
 procedure TSERVERCustomCommand.InternalExecute;
 var
-  JSONStr, Params:string;
-  i:integer;
-  //ja: TJSONArray;
+  JSONStr, Params, Body, tt222: string;
+  i: Integer;
+  test: TSERVERMessage;
+  tQuery: TFDQuery;
+
 begin
-  FResponseInfo.ContentType:='text/html';
+  FResponseInfo.ContentType := 'text/html';
   FResponseInfo.Charset := 'utf-8';
 
   if FCommandType = hcGET then
@@ -190,48 +193,100 @@ begin
     end;
     Query.Command.CommandKind := skSelect;
     for i := 0 to FParams.Count - 1 do
-      Query.Params.ParamValues[FParams.KeyNames[i]] := FParams.ValueFromIndex[i] ;
+      Query.Params.ParamValues[FParams.KeyNames[i]] := FParams.ValueFromIndex[i];
+    // FResponseInfo.ContentText:= copy(JSONStr, 2, length(JSONStr)-2)
 
-    Query.OpenOrExecute;
-    if not Query.IsEmpty then
+  end;
+  if FCommandType = hcPOST then
+  begin
+    PrepareBody(Body);
+    PrepareParams(Body, Params);
+
+    test := TSERVERMessage.Create;
+    test.success_message := '123';
+    test.success_message := '32w1';
+    tt222 := test.AsJSON;
+    with Query.SQL do
     begin
-
- //     FResponseInfo.ContentText := 'все ок - ' + Query.Fields[0].AsString;
-      JSONStr := TConverter.New.DataSet(Query).AsJSONArray.ToString;
-      //FResponseInfo.ContentText:= copy(JSONStr, 2, length(JSONStr)-2)
-      FResponseInfo.ContentText:= JSONStr
+      Clear;
+      Add(AProcName); // Add('[ticket].[service_request__select__data]');
+      Add(Params); // Add(':service_request_id, :service_request_kind_id');
     end;
 
+  end;
+  Query.OpenOrExecute;
+  if not Query.IsEmpty then
+    JSONStr := TConverter.New.DataSet(Query).AsJSONArray.ToString;
+  FResponseInfo.ContentText := JSONStr;
+end;
+
+procedure TSERVERCustomCommand.PrepareBody(var ABody: string);
+var
+  Stream: TStream;
+begin
+  Stream := FPost;
+  if Assigned(Stream) then
+  begin
+    Stream.Position := 0;
+    ABody := ReadStringFromStream(Stream, -1, IndyTextEncoding_UTF8);
   end;
 end;
 
 procedure TSERVERCustomCommand.PrepareName(var AName: string);
 var
   strList: TStringDynArray;
+  Add: string;
   i: Integer;
 begin
+  strList := SplitString(AName, ':');
+  if Length(strList) <> 2 then
+    raise Exception.Create('Command name error')
+  else
+    AName := '';
+
   if FCommandType = hcGET then
+    Add := '__select__';
+  if FCommandType = hcPOST then
+    Add := '__';
+
+  for i := 0 to Length(strList) - 1 do
   begin
-    strList := SplitString(AName, ':');
-    if Length(strList) > 1 then
-      AName := '';
-    for i := 0 to Length(strList) - 1 do
-    begin
-      if strList[i] = '' then
-        raise Exception.Create(': located incorrectly');
-      if i <> Length(strList) - 1 then
-        AName := AName + strList[i] + '__select__'
-      else
-        AName := AName + strList[i];
-    end;
+    if strList[i] = '' then
+      raise Exception.Create(': located incorrectly');
+    if i <> Length(strList) - 1 then
+      AName := AName + strList[i] + Add
+    else
+      AName := AName + strList[i];
+  end;
+
+end;
+
+procedure TSERVERCustomCommand.PrepareParams(ABody: string; var AParams: string);
+var
+  jo: TJSONObject;
+  JSONEnum: TJSONObject.TEnumerator;
+begin
+
+  jo := TJSONObject.ParseJSONValue(TEncoding.ASCII.GetBytes(ABody), 0) as TJSONObject;
+  try
+    // получаем доступ к перечислителю
+    JSONEnum := jo.GetEnumerator;
+    // пока есть не перечисленные пары в json - переходим на следующую пару
+    while JSONEnum.MoveNext do
+      AParams := AParams + ':' + JSONEnum.Current.JsonString.Value + ',';
+    if AParams <> '' then
+      AParams := Copy(AParams, 1, Length(AParams) - 1)
+  Except
+
   end;
 end;
 
 procedure TSERVERCustomCommand.PrepareParams(var AParams: string);
-var i:Integer;
+var
+  i: Integer;
 begin
-  for i := 0 to FParams.Count-1 do
-    AParams:= AParams + ':' + FParams.KeyNames[i] + ',';
+  for i := 0 to FParams.Count - 1 do
+    AParams := AParams + ':' + FParams.KeyNames[i] + ',';
   if AParams <> '' then
     AParams := Copy(AParams, 1, Length(AParams) - 1)
 end;
@@ -245,21 +300,21 @@ end;
 
 procedure TSERVERCustomCommand.SetParam(AParam: TStrings);
 var
-  i: integer;
+  i: Integer;
 begin
   if FParams = nil then
     FParams := TStringList.Create;
- // FParams.QuoteChar:=':';
+  // FParams.QuoteChar:=':';
   FParams.Assign(AParam);
   FFormat := FParams.Values['format'];
   i := FParams.IndexOfName('format');
   if i <> -1 then
     FParams.Delete(i)
   else
-    FFormat:=DefaultAttribute.GetAttribute(Self.ClassInfo,'FFormat');
+    FFormat := DefaultAttribute.GetAttribute(Self.ClassInfo, 'FFormat');
 
-//    if attr <> nil then
-//      FFormat:=attr.Value;
+  // if attr <> nil then
+  // FFormat:=attr.Value;
 
 end;
 
@@ -273,7 +328,6 @@ begin
   FQuery := Value;
 end;
 
-
 procedure TSERVERCustomCommand.SetResponseInfo(const Value: TIdHTTPResponseInfo);
 begin
   FResponseInfo := Value;
@@ -283,7 +337,7 @@ end;
 
 procedure TSERVERCommand.AssignTo(Dest: TPersistent);
 begin
- Inherited AssignTo(Dest) ;
+  Inherited AssignTo(Dest);
 
 end;
 
@@ -309,12 +363,12 @@ begin
   FValue := AValue;
 end;
 
-class function DefaultAttribute.GetAttribute(TypeInfo: PTypeInfo; Name:string): Variant;
+class function DefaultAttribute.GetAttribute(TypeInfo: PTypeInfo; Name: string): Variant;
 var
   Attr: TCustomAttribute;
-  Ctx:TRTTIContext;
+  Ctx: TRTTIContext;
   Fld: TRttiField;
-  str:string;
+  str: string;
 begin
   Ctx := TRTTIContext.Create;
   Result := '';
